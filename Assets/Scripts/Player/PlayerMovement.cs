@@ -18,6 +18,7 @@ public class PlayerMovement : MonoBehaviour, IInitialize
     [Header("Crouching")]
     public float crouchHeight = 0.5f; // The height of the character while crouching
     public float crouchSpeedMultiplier = 0.5f; // Speed multiplier while crouching
+    public float crouchTransitionDuration = 0.5f; // Duration of the transition.
     private float standingHeight; // To store the original height of the character
     private bool isCrouching = false; // To keep track of the crouching state
 
@@ -48,9 +49,11 @@ public class PlayerMovement : MonoBehaviour, IInitialize
     private float originalGroundFriction;
     private bool canBunnyHop = false;
     private bool inAir = false;
+    private bool isMoving = false;
 
     // Store the last frame's mouse position
     private Vector2 lastMousePosition;
+    private Vector3 lastPosition;
 
     public bool isActive { get; set; }
     public bool isSprinting { get; set; } = false;
@@ -68,6 +71,7 @@ public class PlayerMovement : MonoBehaviour, IInitialize
         originalGroundFriction = groundFriction;
 
         lastMousePosition = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
+        lastPosition = transform.position;
 
         isActive = true;
     }
@@ -113,6 +117,8 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
         // Check if the player is in the air
         inAir = !IsGrounded();
+
+        SetIsMoving();
     }
 
     /////////////////////////////////////////////////////////////////////////////////////
@@ -131,6 +137,12 @@ public class PlayerMovement : MonoBehaviour, IInitialize
     Vector3 DirectionalMovement(float x, float z)
     {
         Vector3 move = transform.right * x + transform.forward * z;
+
+        // Normalize the direction vector to prevent faster diagonal movement
+        if (move.magnitude > 1f)
+        {
+            move.Normalize();
+        }
 
         // Adjusting air control multiplier application
         if (inAir)
@@ -246,7 +258,7 @@ public class PlayerMovement : MonoBehaviour, IInitialize
     {
         verticalVelocity = Mathf.Sqrt(jumpHeight * 2f * gravity);
         characterController.Move(new Vector3(0f, verticalVelocity, 0f) * Time.deltaTime);
-        if (canBunnyHop)
+        if (canBunnyHop && isMoving)
         {
             speed = Mathf.Min(speed * bunnyHopMultiplier, maxSpeed);
         }
@@ -265,7 +277,7 @@ public class PlayerMovement : MonoBehaviour, IInitialize
             {
                 characterController.height = standingHeight;
                 isCrouching = false;
-                speed /= crouchSpeedMultiplier; // Reset speed to normal
+                originalSpeed /= crouchSpeedMultiplier; // Reset speed to normal
 
                 // Move the player up a bit to avoid getting stuck in the ground
                 characterController.Move(new Vector3(0f, crouchHeight, 0f));
@@ -277,7 +289,10 @@ public class PlayerMovement : MonoBehaviour, IInitialize
             standingHeight = characterController.height;
             characterController.height = crouchHeight;
             isCrouching = true;
-            speed *= crouchSpeedMultiplier; // Reduce speed while crouching
+            originalSpeed *= crouchSpeedMultiplier; // Reduce speed while crouching
+
+            // Move the player down
+            characterController.Move(new Vector3(0f, -crouchHeight, 0f));
         }
     }
 
@@ -286,7 +301,7 @@ public class PlayerMovement : MonoBehaviour, IInitialize
     public bool IsGrounded()
     {
         bool result = false;
-        if(isCrouching)
+        if (isCrouching)
         {
             result = CheckDistanceDown(crouchHeight);
         }
@@ -324,6 +339,26 @@ public class PlayerMovement : MonoBehaviour, IInitialize
         if (bunnyHopTimer > bunnyHopGracePeriod)
         {
             canBunnyHop = false; // Reset the bunny hop state if grace period is exceeded
+        }
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    void SetIsMoving()
+    {
+        Vector3 currentPos = transform.position;
+        currentPos.y = lastPosition.y; // Ignore the y component of the position
+        float positionDelta = Vector3.Distance(currentPos, lastPosition);
+        lastPosition = transform.position;
+
+        // Check if the player is moving, at least by a small margin
+        if (positionDelta > 0.01f)
+        {
+            isMoving = true;
+        }
+        else
+        {
+            isMoving = false;
         }
     }
 
