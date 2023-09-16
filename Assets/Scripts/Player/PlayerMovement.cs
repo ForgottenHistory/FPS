@@ -1,0 +1,355 @@
+using UnityEngine;
+
+[RequireComponent(typeof(CharacterController))]
+public class PlayerMovement : MonoBehaviour, IInitialize
+{
+    /////////////////////////////////////////////////////////////////////////////////////
+    // PUBLIC FIELDS
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    [Header("Movement")]
+    public float speed = 6f;
+    public float gravity = -9.81f;
+    public float sprintMultiplier = 1.5f;
+    public float groundFriction = 1f;
+    public float groundFrictionMultipier = 1f;  // Adjust this value as needed
+    public float maxSpeed = 12f; // Maximum speed achievable through bunny hopping
+
+    [Header("Crouching")]
+    public float crouchHeight = 0.5f; // The height of the character while crouching
+    public float crouchSpeedMultiplier = 0.5f; // Speed multiplier while crouching
+    private float standingHeight; // To store the original height of the character
+    private bool isCrouching = false; // To keep track of the crouching state
+
+    [Header("Jumping")]
+    public float jumpHeight = 1f;
+    public float jumpHeightOffset = 0.1f;
+    public float groundOffset = 0.1f;
+    public float airControlMultiplier = 1.0f;
+    public float airFriction = 0.1f;
+
+    [Header("Bunny Hopping")]
+    public float bunnyHopMultiplier = 1.02f; // Multiplier for each successful bunny hop
+    public float bunnyHopGracePeriod = 0.2f; // Time in seconds to allow for next bunny hop
+    public float strafeJumpVelocityMultiplier = 0.1f; // Multiplier for strafe jump velocity
+
+    public CameraController cameraController;
+
+    /////////////////////////////////////////////////////////////////////////////////////
+    // PRIVATE FIELDS
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    private CharacterController characterController;
+    private PlayerUI playerUI;
+
+    private float bunnyHopTimer = 0f; // Timer to keep track of time since last jump
+    private float verticalVelocity = 0f; // Keeping track of vertical velocity separately
+    private float originalSpeed;
+    private float originalGroundFriction;
+    private bool canBunnyHop = false;
+    private bool inAir = false;
+
+    // Store the last frame's mouse position
+    private Vector2 lastMousePosition;
+
+    public bool isActive { get; set; }
+    public bool isSprinting { get; set; } = false;
+
+    /////////////////////////////////////////////////////////////////////////////////////
+    // Initialize & Deinitialize
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    public void Initialize()
+    {
+        characterController = GetComponent<CharacterController>();
+        playerUI = GetComponent<PlayerUI>();
+
+        originalSpeed = speed;
+        originalGroundFriction = groundFriction;
+
+        lastMousePosition = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
+
+        isActive = true;
+    }
+
+    public void Deinitialize()
+    {
+        isActive = false;
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////'
+    // UPDATES
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    void Update()
+    {
+        if (isActive == false) return;
+
+        // Increment timers
+        IncrementBunnyHopTimer();
+
+        // Apply movement effects
+        ApplyForces();
+
+        Vector2 mouseDelta = GetMouseDifferenceSinceLastFrame();
+
+        // Apply strafe jumping logic if the player is in the air
+        if (inAir)
+        {
+            //ApplyStrafeJumping(mouseDelta);
+        }
+
+        // Apply vertical movement
+        characterController.Move(new Vector3(0f, verticalVelocity, 0f) * Time.deltaTime);
+
+        DebugMode();
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    void FixedUpdate()
+    {
+        if (isActive == false) return;
+
+        // Check if the player is in the air
+        inAir = !IsGrounded();
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    public void MovePlayer(float x, float z)
+    {
+        // Apply horizontal movement
+        Vector3 move = DirectionalMovement(x, z);
+
+        // Put movement on the character controller
+        characterController.Move(move * speed * Time.deltaTime);
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    Vector3 DirectionalMovement(float x, float z)
+    {
+        Vector3 move = transform.right * x + transform.forward * z;
+
+        // Adjusting air control multiplier application
+        if (inAir)
+        {
+            move *= airControlMultiplier; // Apply different control while in the air
+        }
+
+        // Apply sprinting
+        move = CheckSprint(move);
+
+        return move;
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    Vector2 GetMouseDifferenceSinceLastFrame()
+    {
+        // Get the current mouse position
+        Vector2 currentMousePosition = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
+
+        // Get the difference in mouse position since the last frame
+        Vector2 mouseDelta = currentMousePosition - lastMousePosition;
+
+        // Update the last mouse position for the next frame
+        lastMousePosition = currentMousePosition;
+
+        return mouseDelta;
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    void ApplyStrafeJumping(Vector2 mouseDelta)
+    {
+        // Calculate the desired strafe direction based on the mouse movement direction
+        Vector3 strafeDirection = (transform.right * mouseDelta.x + transform.up * mouseDelta.y).normalized;
+
+        // Get the player's current velocity
+        Vector3 velocity = characterController.velocity;
+
+        // Add the strafe direction to the player's velocity, scaled by a factor (tweak this value for the desired effect)
+        velocity += strafeDirection * strafeJumpVelocityMultiplier;
+
+        // Apply the new velocity to the character controller
+        characterController.Move(velocity * Time.deltaTime);
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    void ApplyForces()
+    {
+        if (inAir == false && speed >= originalSpeed + 1)
+        {
+            groundFriction *= groundFrictionMultipier;
+        }
+        else
+        {
+            groundFriction = originalGroundFriction;
+        }
+
+        // Apply ground friction
+        ApplyGroundFriction();
+
+        // Apply gravity if applicable
+        CheckGravity();
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    void ApplyGroundFriction()
+    {
+        if (!inAir)
+        {
+            speed -= groundFriction * Time.deltaTime;
+            if (speed < originalSpeed)
+            {
+                speed = originalSpeed;
+            }
+        }
+        else
+        {
+            speed = Mathf.Lerp(speed, originalSpeed, airFriction * Time.deltaTime);
+        }
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    Vector3 CheckSprint(Vector3 move)
+    {
+        // Check if the player is sprinting by holding a key
+
+        if (isSprinting)
+        {
+            move *= sprintMultiplier;
+        }
+
+        return move;
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    void CheckGravity()
+    {
+        if (inAir)
+        {
+            // Apply gravity
+            verticalVelocity -= gravity * Time.deltaTime;
+        }
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    public void Jump()
+    {
+        verticalVelocity = Mathf.Sqrt(jumpHeight * 2f * gravity);
+        characterController.Move(new Vector3(0f, verticalVelocity, 0f) * Time.deltaTime);
+        if (canBunnyHop)
+        {
+            speed = Mathf.Min(speed * bunnyHopMultiplier, maxSpeed);
+        }
+        canBunnyHop = true;
+        bunnyHopTimer = 0f; // Reset the timer on each jump
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    public void Crouch()
+    {
+        if (isCrouching)
+        {
+            // Stand up (only if there's enough space to stand)
+            if (!Physics.Raycast(transform.position, Vector3.up, standingHeight))
+            {
+                characterController.height = standingHeight;
+                isCrouching = false;
+                speed /= crouchSpeedMultiplier; // Reset speed to normal
+
+                // Move the player up a bit to avoid getting stuck in the ground
+                characterController.Move(new Vector3(0f, crouchHeight, 0f));
+            }
+        }
+        else
+        {
+            // Crouch
+            standingHeight = characterController.height;
+            characterController.height = crouchHeight;
+            isCrouching = true;
+            speed *= crouchSpeedMultiplier; // Reduce speed while crouching
+        }
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    public bool IsGrounded()
+    {
+        bool result = false;
+        if(isCrouching)
+        {
+            result = CheckDistanceDown(crouchHeight);
+        }
+        else
+        {
+            result = CheckDistanceDown(groundOffset);
+        }
+        if (result)
+            verticalVelocity = 0f;
+        return result;
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    public bool CanJump()
+    {
+        return CheckDistanceDown(jumpHeightOffset);
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    bool CheckDistanceDown(float offset)
+    {
+        // Use a sphere to check if the player is grounded
+        // Offset the sphere down a bit to have the center at the feet
+        bool grounded = Physics.CheckSphere(transform.position - new Vector3(0f, offset, 0f), characterController.radius, LayerMask.GetMask("Ground"));
+        return grounded;
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    void IncrementBunnyHopTimer()
+    {
+        bunnyHopTimer += Time.deltaTime; // Increment the timer each frame
+        if (bunnyHopTimer > bunnyHopGracePeriod)
+        {
+            canBunnyHop = false; // Reset the bunny hop state if grace period is exceeded
+        }
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    public void Reset()
+    {
+        // Reset the player's position
+        characterController.enabled = false;
+        transform.position = Vector3.up;
+        speed = originalSpeed;
+        verticalVelocity = 0f;
+        characterController.enabled = true;
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    void DebugMode()
+    {
+        if (playerUI.isActive == false) return;
+
+        // Update the debug UI
+        playerUI.SetDebugSpeedText(speed);
+        playerUI.SetDebugVelocityText(characterController.velocity);
+        playerUI.SetDebugVerticalVelocityText(verticalVelocity);
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+}
