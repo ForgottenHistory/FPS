@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 [RequireComponent(typeof(CharacterController))]
@@ -72,6 +73,7 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
         lastMousePosition = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
         lastPosition = transform.position;
+        standingHeight = transform.localScale.y;
 
         isActive = true;
     }
@@ -275,26 +277,46 @@ public class PlayerMovement : MonoBehaviour, IInitialize
             // Stand up (only if there's enough space to stand)
             if (!Physics.Raycast(transform.position, Vector3.up, standingHeight))
             {
-                characterController.height = standingHeight;
+                StartCoroutine(ChangeHeight(standingHeight, crouchHeight, crouchTransitionDuration));
                 isCrouching = false;
                 originalSpeed /= crouchSpeedMultiplier; // Reset speed to normal
-
-                // Move the player up a bit to avoid getting stuck in the ground
-                characterController.Move(new Vector3(0f, crouchHeight, 0f));
             }
         }
         else
         {
             // Crouch
-            standingHeight = characterController.height;
-            characterController.height = crouchHeight;
+            StartCoroutine(ChangeHeight(crouchHeight, standingHeight, crouchTransitionDuration));
             isCrouching = true;
             originalSpeed *= crouchSpeedMultiplier; // Reduce speed while crouching
-
-            // Move the player down
-            characterController.Move(new Vector3(0f, -crouchHeight, 0f));
         }
     }
+
+    IEnumerator ChangeHeight(float targetHeight, float originalHeight, float duration)
+    {
+        float elapsedTime = 0f;
+        float previousHeight = originalHeight;
+
+        while (elapsedTime < duration)
+        {
+            float newHeight = Mathf.Lerp(originalHeight, targetHeight, (elapsedTime / duration));
+
+            // Calculate the yOffset based on the difference between the new and previous height
+            float yOffset = (newHeight - previousHeight) / 2.0f;
+
+            characterController.height = newHeight;
+
+            // Move the player up or down based on half the change in height since the last frame
+            characterController.Move(new Vector3(0f, yOffset, 0f));
+
+            // Update the previous height to the new height for the next iteration
+            previousHeight = newHeight;
+
+            elapsedTime += Time.deltaTime;
+            yield return null;
+        }
+        characterController.height = targetHeight;
+    }
+
 
     /////////////////////////////////////////////////////////////////////////////////////
 

@@ -12084,17 +12084,17 @@ MonoBehaviour:
   speed: 10
   gravity: 10
   sprintMultiplier: 1
-  groundFriction: 16
+  groundFriction: 8
   groundFrictionMultipier: 1.05
   maxSpeed: 1000
-  crouchHeight: 0.3
+  crouchHeight: 0
   crouchSpeedMultiplier: 0.8
-  crouchTransitionDuration: 0.5
+  crouchTransitionDuration: 0.2
   jumpHeight: 1.1
-  jumpHeightOffset: 0.75
+  jumpHeightOffset: 0.8
   groundOffset: 0.6
   airControlMultiplier: 1.1
-  airFriction: 0.005
+  airFriction: 0.01
   bunnyHopMultiplier: 1.04
   bunnyHopGracePeriod: 1.35
   strafeJumpVelocityMultiplier: 0.1
