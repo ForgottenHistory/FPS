@@ -1,9 +1,17 @@
+using System.ComponentModel;
 using System.Collections;
 using UnityEngine;
 
 [RequireComponent(typeof(CharacterController))]
 public class PlayerMovement : MonoBehaviour, IInitialize
 {
+    enum WallState
+    {
+        None,
+        Left,
+        Right
+    }
+
     /////////////////////////////////////////////////////////////////////////////////////
     // PUBLIC FIELDS
     /////////////////////////////////////////////////////////////////////////////////////
@@ -31,14 +39,18 @@ public class PlayerMovement : MonoBehaviour, IInitialize
     public float airFriction = 0.1f;
 
     [Header("Wall Jumping")]
+    public float wallJumpHeight = 1f;
     public float wallJumpForce = 6f;
-    public float wallJumpGracePeriod = 0.2f;
+    public float wallJumpAngle = 45f;
+    public float wallJumpDisableDirectionalControlDuration = 0.5f;
+    public float wallJumpApplyForceDuration = 1f;
     public float wallJumpBunnyHopMultiplier = 0.2f;
     public float wallJumpGravityOnWall = 0.5f;
     public float wallJumpDetectionRadius = 0.5f;
     public LayerMask wallLayerMask;
-    private bool onWall = false;
-    private Vector3 wallNormal;
+    private WallState onWallState = WallState.None;
+    private Vector3 wallJumpDirection;
+    private Vector3 wallJumpNormal;
 
     [Header("Bunny Hopping")]
     public float bunnyHopMultiplier = 1.02f; // Multiplier for each successful bunny hop
@@ -55,19 +67,22 @@ public class PlayerMovement : MonoBehaviour, IInitialize
     private PlayerUI playerUI;
 
     private float bunnyHopTimer = 0f; // Timer to keep track of time since last jump
+    private float wallJumpTimer = 10f; // Timer to keep track of time since last walljump
     private float verticalVelocity = 0f; // Keeping track of vertical velocity separately
     private float originalSpeed;
+    private float originalWallJumpForce;
     private float originalGroundFriction;
     private bool canBunnyHop = false;
     private bool inAir = false;
     private bool isMoving = false;
 
     // Store the last frame's mouse position
-    private Vector2 lastMousePosition;
     private Vector3 lastPosition;
 
     public bool isActive { get; set; }
     public bool isSprinting { get; set; } = false;
+    public bool canMoveRight { get; set; } = true;
+    public bool canMoveLeft { get; set; } = true;
 
     /////////////////////////////////////////////////////////////////////////////////////
     // Initialize & Deinitialize
@@ -80,8 +95,8 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
         originalSpeed = speed;
         originalGroundFriction = groundFriction;
+        originalWallJumpForce = wallJumpForce;
 
-        lastMousePosition = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
         lastPosition = transform.position;
         standingHeight = transform.localScale.y;
 
@@ -103,20 +118,13 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
         // Increment timers
         IncrementBunnyHopTimer();
+        IncrementWallJumpTimer();
 
         // Apply movement effects
         ApplyForces();
 
-        // Apply strafe jumping logic if the player is in the air
-        if (inAir)
-        {
-            // Vector2 mouseDelta = GetMouseDifferenceSinceLastFrame();
-            //ApplyStrafeJumping(mouseDelta);
-        }
+        onWallState = WallDetection();
 
-        WallDetection();
-
-        // Apply vertical movement
         characterController.Move(new Vector3(0f, verticalVelocity, 0f) * Time.deltaTime);
 
         DebugMode();
@@ -166,40 +174,13 @@ public class PlayerMovement : MonoBehaviour, IInitialize
         // Apply sprinting
         move = CheckSprint(move);
 
+        // Check if on a wall in the move direction
+        // If yes, nullify the move direction
+        move = CheckOnWall(move, x);
+        playerUI.SetDebugText("X", x.ToString("F2"));
+        playerUI.SetDebugText("Z", z.ToString("F2"));
+        playerUI.SetDebugText("Move", move.ToString("F2"));
         return move;
-    }
-
-    /////////////////////////////////////////////////////////////////////////////////////
-
-    Vector2 GetMouseDifferenceSinceLastFrame()
-    {
-        // Get the current mouse position
-        Vector2 currentMousePosition = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
-
-        // Get the difference in mouse position since the last frame
-        Vector2 mouseDelta = currentMousePosition - lastMousePosition;
-
-        // Update the last mouse position for the next frame
-        lastMousePosition = currentMousePosition;
-
-        return mouseDelta;
-    }
-
-    /////////////////////////////////////////////////////////////////////////////////////
-
-    void ApplyStrafeJumping(Vector2 mouseDelta)
-    {
-        // Calculate the desired strafe direction based on the mouse movement direction
-        Vector3 strafeDirection = (transform.right * mouseDelta.x + transform.up * mouseDelta.y).normalized;
-
-        // Get the player's current velocity
-        Vector3 velocity = characterController.velocity;
-
-        // Add the strafe direction to the player's velocity, scaled by a factor (tweak this value for the desired effect)
-        velocity += strafeDirection * strafeJumpVelocityMultiplier;
-
-        // Apply the new velocity to the character controller
-        characterController.Move(velocity * Time.deltaTime);
     }
 
     /////////////////////////////////////////////////////////////////////////////////////
@@ -213,6 +194,14 @@ public class PlayerMovement : MonoBehaviour, IInitialize
         else
         {
             groundFriction = originalGroundFriction;
+        }
+
+        // Apply walljump effect if applicable
+        if (wallJumpTimer < wallJumpApplyForceDuration)
+        {
+            // Move the character in the direction opposite of the wall
+            characterController.Move(wallJumpDirection * wallJumpForce * Time.deltaTime);
+            wallJumpForce -= originalWallJumpForce / wallJumpApplyForceDuration * Time.deltaTime;
         }
 
         // Apply ground friction
@@ -244,8 +233,6 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
     Vector3 CheckSprint(Vector3 move)
     {
-        // Check if the player is sprinting by holding a key
-
         if (isSprinting)
         {
             move *= sprintMultiplier;
@@ -256,12 +243,48 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
     /////////////////////////////////////////////////////////////////////////////////////
 
+    Vector3 CheckOnWall(Vector3 move, float x)
+    {
+        // Check if on a wall in the move direction
+        // If yes, nullify the move direction
+        if (OnWall())
+        {
+            if (onWallState == WallState.Left && x > 0)
+            {
+                move -= transform.right * x; // nullify the rightward movement
+            }
+            else if (onWallState == WallState.Right && x < 0)
+            {
+                move += transform.right * x; // nullify the leftward movement
+            }
+        }
+        else if (wallJumpTimer < wallJumpDisableDirectionalControlDuration)
+        {
+            // If the player is in the wall jump state, disable movement in the direction of the wall
+            if (x > 0 && !canMoveRight)
+            {
+                move -= transform.right * x; // nullify the rightward movement
+            }
+            else if (x < 0 && !canMoveLeft)
+            {
+                move += transform.right * x; // nullify the leftward movement
+            }
+        }
+        return move;
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
     void CheckGravity()
     {
-        if (inAir)
+        if (inAir && verticalVelocity <= 0)
         {
-            // Apply gravity
-            verticalVelocity -= gravity * Time.deltaTime;
+            float gravityMultiplier = OnWall() ? wallJumpGravityOnWall : gravity;
+            verticalVelocity -= Time.deltaTime * gravityMultiplier;
+        }
+        else if (inAir && verticalVelocity > 0)
+        {
+            verticalVelocity -= Time.deltaTime * gravity;
         }
     }
 
@@ -269,9 +292,14 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
     public void Jump()
     {
-        if (onWall)
+        if (OnWall())
         {
+            // Jump off the wall to the left at an angle based on the side the wall is from the player
+            bool onLeftSide = onWallState == WallState.Left ? true : false;
 
+            // Jump direction is x angle from the wall normal
+            Vector3 jumpDirection = Quaternion.AngleAxis(onLeftSide ? -wallJumpAngle : wallJumpAngle, Vector3.up) * wallJumpNormal;
+            WallJump(jumpDirection);
         }
         else
         {
@@ -288,30 +316,57 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
     /////////////////////////////////////////////////////////////////////////////////////
 
-    void WallDetection()
+    void WallJump(Vector3 jumpDirection)
     {
-        RaycastHit hit;
-        if (Physics.Raycast(transform.position, transform.forward, out hit, wallJumpDetectionRadius, wallLayerMask))
+        verticalVelocity = Mathf.Sqrt(wallJumpHeight * 2f * gravity);
+
+        // Move the character in the jump direction
+        characterController.Move(jumpDirection * wallJumpForce * Time.deltaTime);
+
+        // Disable movement in the direction of the wall for a short duration
+        if (onWallState == WallState.Left)
         {
-            onWall = true;
-            wallNormal = hit.normal;
+            canMoveLeft = false;
         }
-        else
+        else if (onWallState == WallState.Right)
         {
-            onWall = false;
+            canMoveRight = false;
         }
+
+        if (canBunnyHop && isMoving)
+        {
+            speed = Mathf.Min(speed * bunnyHopMultiplier, maxSpeed);
+        }
+        canBunnyHop = true;
+        bunnyHopTimer = 0f; // Reset the timer on each jump
+
+        // Reset the timer
+        wallJumpTimer = 0f;
+        wallJumpDirection = jumpDirection;
     }
 
     /////////////////////////////////////////////////////////////////////////////////////
 
-    public void WallJump()
+    WallState WallDetection()
     {
-        if (onWall && !IsGrounded())
+        if (IsGrounded())
         {
-            Vector3 jumpDirection = (wallNormal + Vector3.up).normalized;
-            verticalVelocity = wallJumpForce;
-            characterController.Move(jumpDirection * wallJumpForce * Time.deltaTime);
+            return WallState.None;
         }
+
+        // If player is going backwards do not stick to a wall
+        if (Vector3.Dot(transform.forward, characterController.velocity) < 0)
+        {
+            return WallState.None;
+        }
+
+        RaycastHit hit;
+        bool onWallLeft = Physics.Raycast(transform.position, -transform.right, out hit, wallJumpDetectionRadius, wallLayerMask);
+        bool onWallRight = Physics.Raycast(transform.position, transform.right, out hit, wallJumpDetectionRadius, wallLayerMask);
+
+        wallJumpNormal = hit.normal;
+        Debug.Log("Wall normal: " + wallJumpNormal);
+        return onWallLeft ? WallState.Left : onWallRight ? WallState.Right : WallState.None;
     }
 
     /////////////////////////////////////////////////////////////////////////////////////
@@ -365,7 +420,6 @@ public class PlayerMovement : MonoBehaviour, IInitialize
         characterController.height = targetHeight;
     }
 
-
     /////////////////////////////////////////////////////////////////////////////////////
 
     public bool IsGrounded()
@@ -388,7 +442,18 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
     public bool CanJump()
     {
+        if (OnWall())
+        {
+            return true;
+        }
         return CheckDistanceDown(jumpHeightOffset);
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    bool OnWall()
+    {
+        return onWallState != WallState.None;
     }
 
     /////////////////////////////////////////////////////////////////////////////////////
@@ -409,6 +474,27 @@ public class PlayerMovement : MonoBehaviour, IInitialize
         if (bunnyHopTimer > bunnyHopGracePeriod)
         {
             canBunnyHop = false; // Reset the bunny hop state if grace period is exceeded
+        }
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    void IncrementWallJumpTimer()
+    {
+        wallJumpTimer += Time.deltaTime; // Increment the timer each frame
+        CheckWallJumpTimer();
+    }
+
+    public void CheckWallJumpTimer()
+    {
+        if (wallJumpTimer > wallJumpDisableDirectionalControlDuration)
+        {
+            canMoveLeft = true;
+            canMoveRight = true;
+            if (wallJumpTimer > wallJumpApplyForceDuration)
+            {
+                wallJumpForce = originalWallJumpForce;
+            }
         }
     }
 
@@ -452,8 +538,17 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
         // Update the debug UI
         playerUI.SetDebugText("Speed", speed.ToString("F2"));
+        playerUI.SetDebugText("Velocity", characterController.velocity.ToString("F2"));
         playerUI.SetDebugText("Vertical Velocity", verticalVelocity.ToString("F2"));
         playerUI.SetDebugText("Bunny Hop Timer", bunnyHopTimer.ToString("F2"));
+        playerUI.SetDebugText("Wall Jump Timer", wallJumpTimer.ToString("F2"));
+        playerUI.SetDebugText("In air", inAir.ToString());
+        playerUI.SetDebugText("On ground", IsGrounded().ToString());
+        playerUI.SetDebugText("On wall", onWallState.ToString());
+        playerUI.SetDebugText("Moving", isMoving.ToString());
+        playerUI.SetDebugText("Can jump", CanJump().ToString());
+        playerUI.SetDebugText("Can move left", canMoveLeft.ToString());
+        playerUI.SetDebugText("Can move right", canMoveRight.ToString());
     }
 
     /////////////////////////////////////////////////////////////////////////////////////

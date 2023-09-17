@@ -56,18 +56,28 @@ public class PlayerInput : MonoBehaviour, IInitialize
     {
         float x = Input.GetAxis("Horizontal");
         float z = Input.GetAxis("Vertical");
-        
+
         if (Input.GetKeyDown(KeyCode.Space) && playerMovement.CanJump())
         {
             playerMovement.Jump();
         }
 
-        if(Input.GetKeyDown(KeyCode.LeftControl)){
+        if (Input.GetKeyDown(KeyCode.LeftControl))
+        {
             playerMovement.Crouch();
         }
 
         playerMovement.isSprinting = Input.GetKey(KeyCode.LeftShift);
-        
+
+        playerMovement.CheckWallJumpTimer();
+        if (playerMovement.canMoveLeft && !playerMovement.canMoveRight)
+        {
+            x = Mathf.Clamp(x, -1, 0);
+        }
+        else if (playerMovement.canMoveRight && !playerMovement.canMoveLeft)
+        {
+            x = Mathf.Clamp(x, 0, 1);
+        }
         playerMovement.MovePlayer(x, z);
     }
 
