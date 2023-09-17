@@ -38,6 +38,7 @@ public class GameManager : MonoBehaviour
         playerCamera.Initialize();
         playerMovement.Initialize();
         playerInput.Initialize();
+        playerUI.Initialize();
 
         playerUI.SetDebugUI(true);
 

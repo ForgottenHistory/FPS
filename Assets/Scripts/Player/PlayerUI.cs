@@ -11,9 +11,8 @@ public class PlayerUI : MonoBehaviour, IInitialize
     /////////////////////////////////////////////////////////////////////////////////////
     
     public GameObject debugUI;
-    public TextMeshProUGUI debugSpeedText;
-    public TextMeshProUGUI debugVelocityText;
-    public TextMeshProUGUI debugVerticalVelocityText;
+    public TextMeshProUGUI debugTextOne;
+    public TextMeshProUGUI debugTextTwo;
 
     public bool isActive { get; set; }
 
@@ -23,11 +22,24 @@ public class PlayerUI : MonoBehaviour, IInitialize
 
     CharacterController playerController;
 
+    Vector2 offsetBetweenTexts;
+    Vector2 startPosition;
+
+    Dictionary<string, TextMeshProUGUI> debugTexts = new Dictionary<string, TextMeshProUGUI>();
+
     /////////////////////////////////////////////////////////////////////////////////////
     
     public void Initialize()
     {
         playerController = GetComponent<CharacterController>();
+
+        // Get the offset between the two texts
+        offsetBetweenTexts = debugTextTwo.rectTransform.anchoredPosition - debugTextOne.rectTransform.anchoredPosition;
+        startPosition = debugTextOne.rectTransform.anchoredPosition;
+
+        // Disable the texts
+        debugTextOne.gameObject.SetActive(false);
+        debugTextTwo.gameObject.SetActive(false);
 
         isActive = true;
     }
@@ -45,26 +57,23 @@ public class PlayerUI : MonoBehaviour, IInitialize
         isActive = state;
     }
 
-    /////////////////////////////////////////////////////////////////////////////////////
-    
-    public void SetDebugSpeedText(float speed)
+    public void SetDebugText(string key, string value)
     {
-        debugSpeedText.text = "Speed: " + speed.ToString("F2");
-    }
+        if (!debugTexts.ContainsKey(key))
+        {
+            // Create a new text
+            TextMeshProUGUI newText = Instantiate(debugTextOne, debugTextOne.transform.parent);
+            newText.rectTransform.anchoredPosition = startPosition + offsetBetweenTexts * debugTexts.Count;
+            newText.text = key + ": " + value;
+            newText.gameObject.SetActive(true);
 
-    /////////////////////////////////////////////////////////////////////////////////////
-    
-    public void SetDebugVelocityText(Vector3 velocity)
-    {
-        debugVelocityText.text = "Velocity: " + velocity.ToString("F2");
+            // Add it to the dictionary
+            debugTexts.Add(key, newText);
+        }
+        else
+        {
+            // Update the text
+            debugTexts[key].text = key + ": " + value;
+        }
     }
-
-    /////////////////////////////////////////////////////////////////////////////////////
-    
-    public void SetDebugVerticalVelocityText(float verticalVelocity)
-    {
-        debugVerticalVelocityText.text = "Vertical Velocity: " + verticalVelocity.ToString("F2");
-    }
-
-    /////////////////////////////////////////////////////////////////////////////////////
 }

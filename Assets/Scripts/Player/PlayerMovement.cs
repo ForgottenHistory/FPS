@@ -30,6 +30,16 @@ public class PlayerMovement : MonoBehaviour, IInitialize
     public float airControlMultiplier = 1.0f;
     public float airFriction = 0.1f;
 
+    [Header("Wall Jumping")]
+    public float wallJumpForce = 6f;
+    public float wallJumpGracePeriod = 0.2f;
+    public float wallJumpBunnyHopMultiplier = 0.2f;
+    public float wallJumpGravityOnWall = 0.5f;
+    public float wallJumpDetectionRadius = 0.5f;
+    public LayerMask wallLayerMask;
+    private bool onWall = false;
+    private Vector3 wallNormal;
+
     [Header("Bunny Hopping")]
     public float bunnyHopMultiplier = 1.02f; // Multiplier for each successful bunny hop
     public float bunnyHopGracePeriod = 0.2f; // Time in seconds to allow for next bunny hop
@@ -97,13 +107,14 @@ public class PlayerMovement : MonoBehaviour, IInitialize
         // Apply movement effects
         ApplyForces();
 
-        Vector2 mouseDelta = GetMouseDifferenceSinceLastFrame();
-
         // Apply strafe jumping logic if the player is in the air
         if (inAir)
         {
+            // Vector2 mouseDelta = GetMouseDifferenceSinceLastFrame();
             //ApplyStrafeJumping(mouseDelta);
         }
+
+        WallDetection();
 
         // Apply vertical movement
         characterController.Move(new Vector3(0f, verticalVelocity, 0f) * Time.deltaTime);
@@ -258,14 +269,49 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
     public void Jump()
     {
-        verticalVelocity = Mathf.Sqrt(jumpHeight * 2f * gravity);
-        characterController.Move(new Vector3(0f, verticalVelocity, 0f) * Time.deltaTime);
-        if (canBunnyHop && isMoving)
+        if (onWall)
         {
-            speed = Mathf.Min(speed * bunnyHopMultiplier, maxSpeed);
+
         }
-        canBunnyHop = true;
-        bunnyHopTimer = 0f; // Reset the timer on each jump
+        else
+        {
+            verticalVelocity = Mathf.Sqrt(jumpHeight * 2f * gravity);
+            characterController.Move(new Vector3(0f, verticalVelocity, 0f) * Time.deltaTime);
+            if (canBunnyHop && isMoving)
+            {
+                speed = Mathf.Min(speed * bunnyHopMultiplier, maxSpeed);
+            }
+            canBunnyHop = true;
+            bunnyHopTimer = 0f; // Reset the timer on each jump
+        }
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    void WallDetection()
+    {
+        RaycastHit hit;
+        if (Physics.Raycast(transform.position, transform.forward, out hit, wallJumpDetectionRadius, wallLayerMask))
+        {
+            onWall = true;
+            wallNormal = hit.normal;
+        }
+        else
+        {
+            onWall = false;
+        }
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    public void WallJump()
+    {
+        if (onWall && !IsGrounded())
+        {
+            Vector3 jumpDirection = (wallNormal + Vector3.up).normalized;
+            verticalVelocity = wallJumpForce;
+            characterController.Move(jumpDirection * wallJumpForce * Time.deltaTime);
+        }
     }
 
     /////////////////////////////////////////////////////////////////////////////////////
@@ -290,6 +336,8 @@ public class PlayerMovement : MonoBehaviour, IInitialize
             originalSpeed *= crouchSpeedMultiplier; // Reduce speed while crouching
         }
     }
+
+    /////////////////////////////////////////////////////////////////////////////////////
 
     IEnumerator ChangeHeight(float targetHeight, float originalHeight, float duration)
     {
@@ -403,9 +451,9 @@ public class PlayerMovement : MonoBehaviour, IInitialize
         if (playerUI.isActive == false) return;
 
         // Update the debug UI
-        playerUI.SetDebugSpeedText(speed);
-        playerUI.SetDebugVelocityText(characterController.velocity);
-        playerUI.SetDebugVerticalVelocityText(verticalVelocity);
+        playerUI.SetDebugText("Speed", speed.ToString("F2"));
+        playerUI.SetDebugText("Vertical Velocity", verticalVelocity.ToString("F2"));
+        playerUI.SetDebugText("Bunny Hop Timer", bunnyHopTimer.ToString("F2"));
     }
 
     /////////////////////////////////////////////////////////////////////////////////////
