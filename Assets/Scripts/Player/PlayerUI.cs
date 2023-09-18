@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 using TMPro;
 
 [RequireComponent(typeof(CharacterController))]
@@ -13,6 +14,7 @@ public class PlayerUI : MonoBehaviour, IInitialize
     public GameObject debugUI;
     public TextMeshProUGUI debugTextOne;
     public TextMeshProUGUI debugTextTwo;
+    public Image debugPanel;
 
     public bool isActive { get; set; }
 
@@ -61,9 +63,12 @@ public class PlayerUI : MonoBehaviour, IInitialize
     {
         if (!debugTexts.ContainsKey(key))
         {
+            // Increase the size of the panel
+            debugPanel.rectTransform.sizeDelta += new Vector2(0, 40);
+
             // Create a new text
             TextMeshProUGUI newText = Instantiate(debugTextOne, debugTextOne.transform.parent);
-            newText.rectTransform.anchoredPosition = startPosition + offsetBetweenTexts * debugTexts.Count;
+            newText.rectTransform.anchoredPosition = startPosition - offsetBetweenTexts * debugTexts.Count * 80.0f;
             newText.text = key + ": " + value;
             newText.gameObject.SetActive(true);
 
