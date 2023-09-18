@@ -70,14 +70,7 @@ public class PlayerInput : MonoBehaviour, IInitialize
         playerMovement.isSprinting = Input.GetKey(KeyCode.LeftShift);
 
         playerMovement.CheckWallJumpTimer();
-        if (playerMovement.canMoveLeft && !playerMovement.canMoveRight)
-        {
-            x = Mathf.Clamp(x, -1, 0);
-        }
-        else if (playerMovement.canMoveRight && !playerMovement.canMoveLeft)
-        {
-            x = Mathf.Clamp(x, 0, 1);
-        }
+        x = Mathf.Clamp(x, -playerMovement.leftInputMultiplier, playerMovement.rightInputMultiplier);
         playerMovement.MovePlayer(x, z);
     }
 

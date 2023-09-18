@@ -81,8 +81,8 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
     public bool isActive { get; set; }
     public bool isSprinting { get; set; } = false;
-    public bool canMoveRight { get; set; } = true;
-    public bool canMoveLeft { get; set; } = true;
+    public float rightInputMultiplier { get; set; } = 1.0f;
+    public float leftInputMultiplier { get; set; } = 1.0f;
 
     /////////////////////////////////////////////////////////////////////////////////////
     // Initialize & Deinitialize
@@ -157,6 +157,9 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
     Vector3 DirectionalMovement(float x, float z)
     {
+        // Clamp x with the input multipliers
+        x = Mathf.Clamp(x, -leftInputMultiplier, rightInputMultiplier);
+
         Vector3 move = transform.right * x + transform.forward * z;
 
         // Normalize the direction vector to prevent faster diagonal movement
@@ -176,7 +179,7 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
         // Check if on a wall in the move direction
         // If yes, nullify the move direction
-        move = CheckOnWall(move, x);
+        //move = CheckOnWall(move, x);
         playerUI.SetDebugText("X", x.ToString("F2"));
         playerUI.SetDebugText("Z", z.ToString("F2"));
         playerUI.SetDebugText("Move", move.ToString("F2"));
@@ -243,6 +246,7 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
     /////////////////////////////////////////////////////////////////////////////////////
 
+    /**
     Vector3 CheckOnWall(Vector3 move, float x)
     {
         // Check if on a wall in the move direction
@@ -272,6 +276,7 @@ public class PlayerMovement : MonoBehaviour, IInitialize
         }
         return move;
     }
+    */
 
     /////////////////////////////////////////////////////////////////////////////////////
 
@@ -279,7 +284,11 @@ public class PlayerMovement : MonoBehaviour, IInitialize
     {
         if (inAir && verticalVelocity <= 0)
         {
-            float gravityMultiplier = OnWall() ? wallJumpGravityOnWall : gravity;
+            float gravityMultiplier = gravity;
+            if (OnWall() && isMoving)
+            {
+                gravityMultiplier = wallJumpGravityOnWall;
+            }
             verticalVelocity -= Time.deltaTime * gravityMultiplier;
         }
         else if (inAir && verticalVelocity > 0)
@@ -298,7 +307,9 @@ public class PlayerMovement : MonoBehaviour, IInitialize
             bool onLeftSide = onWallState == WallState.Left ? true : false;
 
             // Jump direction is x angle from the wall normal
-            Vector3 jumpDirection = Quaternion.AngleAxis(onLeftSide ? -wallJumpAngle : wallJumpAngle, Vector3.up) * wallJumpNormal;
+            Vector3 outwardsDirection = wallJumpNormal;
+
+            Vector3 jumpDirection = Quaternion.AngleAxis(onLeftSide ? -wallJumpAngle : wallJumpAngle, Vector3.up) * outwardsDirection;
             WallJump(jumpDirection);
         }
         else
@@ -318,19 +329,19 @@ public class PlayerMovement : MonoBehaviour, IInitialize
 
     void WallJump(Vector3 jumpDirection)
     {
+        playerUI.SetDebugText("Jump Direction", jumpDirection.ToString("F2"));
         verticalVelocity = Mathf.Sqrt(wallJumpHeight * 2f * gravity);
-
-        // Move the character in the jump direction
-        characterController.Move(jumpDirection * wallJumpForce * Time.deltaTime);
-
+        
         // Disable movement in the direction of the wall for a short duration
         if (onWallState == WallState.Left)
         {
-            canMoveLeft = false;
+            leftInputMultiplier = 0.0f;
+            rightInputMultiplier = 1.0f;
         }
         else if (onWallState == WallState.Right)
         {
-            canMoveRight = false;
+            leftInputMultiplier = 1.0f;
+            rightInputMultiplier = 0.0f;
         }
 
         if (canBunnyHop && isMoving)
@@ -343,6 +354,7 @@ public class PlayerMovement : MonoBehaviour, IInitialize
         // Reset the timer
         wallJumpTimer = 0f;
         wallJumpDirection = jumpDirection;
+        wallJumpForce = originalWallJumpForce;
     }
 
     /////////////////////////////////////////////////////////////////////////////////////
@@ -361,11 +373,15 @@ public class PlayerMovement : MonoBehaviour, IInitialize
         }
 
         RaycastHit hit;
-        bool onWallLeft = Physics.Raycast(transform.position, -transform.right, out hit, wallJumpDetectionRadius, wallLayerMask);
-        bool onWallRight = Physics.Raycast(transform.position, transform.right, out hit, wallJumpDetectionRadius, wallLayerMask);
+        bool onWallLeft = false;
+        bool onWallRight = false;
+
+        onWallLeft = Physics.Raycast(transform.position, -transform.right, out hit, wallJumpDetectionRadius, wallLayerMask);
+
+        if (onWallLeft == false)
+            onWallRight = Physics.Raycast(transform.position, transform.right, out hit, wallJumpDetectionRadius, wallLayerMask);
 
         wallJumpNormal = hit.normal;
-        Debug.Log("Wall normal: " + wallJumpNormal);
         return onWallLeft ? WallState.Left : onWallRight ? WallState.Right : WallState.None;
     }
 
@@ -489,12 +505,18 @@ public class PlayerMovement : MonoBehaviour, IInitialize
     {
         if (wallJumpTimer > wallJumpDisableDirectionalControlDuration)
         {
-            canMoveLeft = true;
-            canMoveRight = true;
             if (wallJumpTimer > wallJumpApplyForceDuration)
             {
                 wallJumpForce = originalWallJumpForce;
             }
+        }
+        else
+        {
+            leftInputMultiplier += Time.deltaTime / wallJumpDisableDirectionalControlDuration;
+            rightInputMultiplier += Time.deltaTime / wallJumpDisableDirectionalControlDuration;
+
+            leftInputMultiplier = Mathf.Clamp(leftInputMultiplier, 0.0f, 1.0f);
+            rightInputMultiplier = Mathf.Clamp(rightInputMultiplier, 0.0f, 1.0f);
         }
     }
 
@@ -547,8 +569,8 @@ public class PlayerMovement : MonoBehaviour, IInitialize
         playerUI.SetDebugText("On wall", onWallState.ToString());
         playerUI.SetDebugText("Moving", isMoving.ToString());
         playerUI.SetDebugText("Can jump", CanJump().ToString());
-        playerUI.SetDebugText("Can move left", canMoveLeft.ToString());
-        playerUI.SetDebugText("Can move right", canMoveRight.ToString());
+        playerUI.SetDebugText("Left", leftInputMultiplier.ToString("F2"));
+        playerUI.SetDebugText("Right", rightInputMultiplier.ToString("F2"));
     }
 
     /////////////////////////////////////////////////////////////////////////////////////
