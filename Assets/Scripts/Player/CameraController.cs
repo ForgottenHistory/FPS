@@ -50,6 +50,12 @@ public class CameraController : MonoBehaviour, IInitialize
     {
         if (isActive == false) return;
 
+        if(Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.Home))
+        {
+            Cursor.visible = !Cursor.visible;
+            Cursor.lockState = Cursor.visible ? CursorLockMode.None : CursorLockMode.Locked;
+        }
+
         MouseLook();
         SetPosition();
     }
