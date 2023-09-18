@@ -449,8 +449,6 @@ public class PlayerMovement : MonoBehaviour, IInitialize
         {
             result = CheckDistanceDown(groundOffset);
         }
-        if (result)
-            verticalVelocity = 0f;
         return result;
     }
 
